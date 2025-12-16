@@ -116,16 +116,26 @@ function App() {
 
   // Handle video metadata loaded - use known duration for screen recordings
   const handleLoadedMetadata = useCallback((meta) => {
+    console.log('handleLoadedMetadata called, meta:', meta, 'known:', window._knownVideoDuration, 'current:', videoMeta.duration);
+
     // Use known duration from screen recording if available
     let duration = window._knownVideoDuration;
 
-    // If no known duration, try to get from video (may be Infinity for WebM)
+    // If no known duration, check if we already have a valid duration set
     if (!duration || duration <= 0) {
-      duration = meta.duration;
-      if (!isFinite(duration) || isNaN(duration) || duration <= 0) {
-        duration = 0;
+      if (videoMeta.duration > 0) {
+        // Keep existing duration (was set by handleVideoLoad)
+        duration = videoMeta.duration;
+      } else {
+        // Try to get from video (may be Infinity for WebM)
+        duration = meta.duration;
+        if (!isFinite(duration) || isNaN(duration) || duration <= 0) {
+          duration = 0;
+        }
       }
     }
+
+    console.log('handleLoadedMetadata setting duration:', duration);
 
     setVideoMeta({
       ...meta,
@@ -142,7 +152,7 @@ function App() {
 
     // Clear known duration after use
     window._knownVideoDuration = null;
-  }, []);
+  }, [videoMeta.duration]);
 
   // Update duration when it becomes available
   useEffect(() => {
