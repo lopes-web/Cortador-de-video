@@ -65,6 +65,8 @@ function App() {
 
   // Handle video load - accepts optional known duration for screen recordings
   const handleVideoLoad = useCallback(async (file, knownDuration = null) => {
+    console.log('handleVideoLoad called, knownDuration:', knownDuration);
+
     setVideoFile(file);
     setIsPlaying(false);
     setCurrentTime(0);
@@ -77,9 +79,13 @@ function App() {
 
     // If we have a known duration (from screen recording), set it immediately
     if (knownDuration && knownDuration > 0) {
-      // We'll set the video meta when dimensions are available
-      // Store the known duration for later use
+      console.log('Setting known duration:', knownDuration);
       window._knownVideoDuration = knownDuration;
+
+      // Set video meta with known duration immediately (will be updated with dimensions later)
+      setVideoMeta(prev => ({ ...prev, duration: knownDuration }));
+      setTrimStart(0);
+      setTrimEnd(knownDuration);
     } else {
       window._knownVideoDuration = null;
     }
