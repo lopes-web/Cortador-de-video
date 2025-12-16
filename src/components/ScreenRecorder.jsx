@@ -7,11 +7,13 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
     const streamRef = useRef(null);
     const chunksRef = useRef([]);
     const startTimeRef = useRef(null);
+    const hasStartedRef = useRef(false);
 
     // Start recording
     const startRecording = async () => {
         setError(null);
         chunksRef.current = [];
+        hasStartedRef.current = false;
 
         try {
             // Request screen capture with audio
@@ -43,17 +45,34 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
             mediaRecorder.ondataavailable = (e) => {
                 if (e.data.size > 0) {
                     chunksRef.current.push(e.data);
+                    hasStartedRef.current = true;
                 }
             };
 
             mediaRecorder.onstop = () => {
+                // Only process if we have actual recorded data
+                if (chunksRef.current.length === 0 || !hasStartedRef.current) {
+                    console.warn('Recording stopped but no data was captured');
+                    stopStream();
+                    onRecordingEnd();
+                    return;
+                }
+
                 // Calculate duration from start time
                 const endTime = Date.now();
                 const durationMs = endTime - startTimeRef.current;
-                const durationSeconds = durationMs / 1000;
+                const durationSeconds = Math.max(1, durationMs / 1000); // At least 1 second
 
                 // Create blob
                 const blob = new Blob(chunksRef.current, { type: mimeType });
+
+                // Only proceed if blob has actual content
+                if (blob.size < 1000) {
+                    console.warn('Recording too short or empty');
+                    stopStream();
+                    onRecordingEnd();
+                    return;
+                }
 
                 const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
                 const file = new File([blob], `gravacao_${timestamp}.webm`, {
