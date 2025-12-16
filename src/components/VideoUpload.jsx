@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
+import { ScreenRecorder } from './ScreenRecorder';
 
 export function VideoUpload({ onVideoLoad }) {
     const [isDragOver, setIsDragOver] = useState(false);
@@ -36,45 +37,59 @@ export function VideoUpload({ onVideoLoad }) {
     };
 
     const validateAndLoadVideo = (file) => {
-        const validTypes = ['video/mp4', 'video/webm'];
+        const validTypes = ['video/mp4', 'video/webm', 'video/quicktime'];
 
         if (!validTypes.includes(file.type)) {
-            alert('Formato não suportado. Use MP4 ou WebM.');
+            alert('Formato não suportado. Use MP4, WebM ou MOV.');
             return;
         }
 
         onVideoLoad(file);
     };
 
+    const handleRecordingComplete = (file) => {
+        onVideoLoad(file);
+    };
+
     return (
         <div
-            className={`video-upload ${isDragOver ? 'video-upload--dragover' : ''}`}
+            className={`video-upload-container ${isDragOver ? 'video-upload-container--dragover' : ''}`}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            onClick={handleClick}
         >
             <input
                 ref={inputRef}
                 type="file"
-                accept="video/mp4,video/webm"
+                accept="video/mp4,video/webm,video/quicktime"
                 onChange={handleFileChange}
                 style={{ display: 'none' }}
             />
 
-            <svg className="video-upload__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="17 8 12 3 7 8" />
-                <line x1="12" y1="3" x2="12" y2="15" />
-            </svg>
+            <div className="video-upload-options">
+                {/* Upload option */}
+                <button
+                    className="video-upload-option"
+                    onClick={handleClick}
+                >
+                    <div className="video-upload-option__icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="17 8 12 3 7 8" />
+                            <line x1="12" y1="3" x2="12" y2="15" />
+                        </svg>
+                    </div>
+                    <span className="video-upload-option__title">Enviar vídeo</span>
+                    <span className="video-upload-option__subtitle">MP4, WebM ou MOV</span>
+                </button>
 
-            <h2 className="video-upload__title">Arraste um vídeo aqui</h2>
-            <p className="video-upload__subtitle">ou clique para selecionar um arquivo</p>
-
-            <div className="video-upload__formats">
-                <span className="video-upload__format">MP4</span>
-                <span className="video-upload__format">WebM</span>
+                {/* Screen recorder option */}
+                <ScreenRecorder onRecordingComplete={handleRecordingComplete} />
             </div>
+
+            <p className="video-upload-hint">
+                ou arraste um arquivo de vídeo aqui
+            </p>
         </div>
     );
 }
