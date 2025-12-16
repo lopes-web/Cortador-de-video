@@ -1,14 +1,16 @@
 import { useState, useRef, useCallback } from 'react';
 import { ScreenRecorder } from './ScreenRecorder';
 
-export function VideoUpload({ onVideoLoad }) {
+export function VideoUpload({ onVideoLoad, isRecording, onRecordingStart, onRecordingEnd }) {
     const [isDragOver, setIsDragOver] = useState(false);
     const inputRef = useRef(null);
 
     const handleDragOver = useCallback((e) => {
         e.preventDefault();
-        setIsDragOver(true);
-    }, []);
+        if (!isRecording) {
+            setIsDragOver(true);
+        }
+    }, [isRecording]);
 
     const handleDragLeave = useCallback((e) => {
         e.preventDefault();
@@ -19,14 +21,18 @@ export function VideoUpload({ onVideoLoad }) {
         e.preventDefault();
         setIsDragOver(false);
 
+        if (isRecording) return;
+
         const files = e.dataTransfer.files;
         if (files.length > 0) {
             validateAndLoadVideo(files[0]);
         }
-    }, []);
+    }, [isRecording]);
 
     const handleClick = () => {
-        inputRef.current?.click();
+        if (!isRecording) {
+            inputRef.current?.click();
+        }
     };
 
     const handleFileChange = (e) => {
@@ -50,6 +56,18 @@ export function VideoUpload({ onVideoLoad }) {
     const handleRecordingComplete = (file) => {
         onVideoLoad(file);
     };
+
+    // When recording, show minimal UI
+    if (isRecording) {
+        return (
+            <div className="video-upload-container video-upload-container--recording">
+                <div className="recording-placeholder">
+                    <p>Gravando sua tela...</p>
+                    <p className="recording-placeholder__hint">A gravação aparecerá aqui quando você parar</p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div
@@ -84,7 +102,12 @@ export function VideoUpload({ onVideoLoad }) {
                 </button>
 
                 {/* Screen recorder option */}
-                <ScreenRecorder onRecordingComplete={handleRecordingComplete} />
+                <ScreenRecorder
+                    onRecordingComplete={handleRecordingComplete}
+                    isRecording={isRecording}
+                    onRecordingStart={onRecordingStart}
+                    onRecordingEnd={onRecordingEnd}
+                />
             </div>
 
             <p className="video-upload-hint">

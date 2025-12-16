@@ -16,6 +16,11 @@ function App() {
   const [currentTime, setCurrentTime] = useState(0);
   const [thumbnails, setThumbnails] = useState([]);
 
+  // Recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const recordingTimerRef = useRef(null);
+
   // Edit state
   const [cropArea, setCropArea] = useState({ x: 0, y: 0, width: 0, height: 0 });
   const [selectedRatio, setSelectedRatio] = useState(null);
@@ -24,6 +29,36 @@ function App() {
   const [trimEnd, setTrimEnd] = useState(0);
 
   const videoRef = useRef(null);
+
+  // Format recording time
+  const formatRecordingTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Recording handlers
+  const handleRecordingStart = useCallback(() => {
+    setIsRecording(true);
+    setRecordingTime(0);
+    recordingTimerRef.current = setInterval(() => {
+      setRecordingTime(t => t + 1);
+    }, 1000);
+  }, []);
+
+  const handleRecordingEnd = useCallback(() => {
+    setIsRecording(false);
+    setRecordingTime(0);
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+    }
+  }, []);
+
+  const handleStopRecording = () => {
+    if (window.stopScreenRecording) {
+      window.stopScreenRecording();
+    }
+  };
 
   // Handle video load
   const handleVideoLoad = useCallback(async (file) => {
@@ -55,9 +90,18 @@ function App() {
     setTrimEnd(0);
   };
 
-  // Handle video metadata loaded
+  // Handle video metadata loaded - with validation for WebM
   const handleLoadedMetadata = useCallback((meta) => {
-    setVideoMeta(meta);
+    // Validate duration (WebM from screen recording may have Infinity)
+    let duration = meta.duration;
+    if (!isFinite(duration) || isNaN(duration) || duration <= 0) {
+      duration = 0;
+    }
+
+    setVideoMeta({
+      ...meta,
+      duration
+    });
     setCropArea({
       x: 0,
       y: 0,
@@ -65,8 +109,48 @@ function App() {
       height: meta.height
     });
     setTrimStart(0);
-    setTrimEnd(meta.duration);
+    setTrimEnd(duration);
   }, []);
+
+  // Fix WebM duration after video can play through
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !videoFile) return;
+
+    const fixDuration = () => {
+      if (isFinite(video.duration) && video.duration > 0 && videoMeta.duration === 0) {
+        setVideoMeta(prev => ({ ...prev, duration: video.duration }));
+        setTrimEnd(video.duration);
+      }
+    };
+
+    // For WebM, we need to seek to get true duration
+    const seekToEnd = () => {
+      if (!isFinite(video.duration) || video.duration === 0) {
+        video.currentTime = 1e101; // Seek to end
+      }
+    };
+
+    const onSeeked = () => {
+      if (isFinite(video.duration) && video.duration > 0) {
+        setVideoMeta(prev => ({ ...prev, duration: video.duration }));
+        setTrimEnd(video.duration);
+        video.currentTime = 0;
+      }
+    };
+
+    video.addEventListener('loadeddata', seekToEnd);
+    video.addEventListener('seeked', onSeeked);
+    video.addEventListener('durationchange', fixDuration);
+    video.addEventListener('canplaythrough', fixDuration);
+
+    return () => {
+      video.removeEventListener('loadeddata', seekToEnd);
+      video.removeEventListener('seeked', onSeeked);
+      video.removeEventListener('durationchange', fixDuration);
+      video.removeEventListener('canplaythrough', fixDuration);
+    };
+  }, [videoFile, videoMeta.duration]);
 
   // Play/Pause
   const handlePlayPause = useCallback(() => {
@@ -169,10 +253,23 @@ function App() {
 
   return (
     <div className="app">
-      {/* Header - minimal, no logo */}
+      {/* Header */}
       <header className="header">
-        <div className="header__title">
-          {videoFile ? videoFile.name : ''}
+        <div className="header__left">
+          {isRecording && (
+            <div className="recording-indicator">
+              <span className="recording-indicator__dot" />
+              <span className="recording-indicator__time">{formatRecordingTime(recordingTime)}</span>
+              <button className="recording-indicator__stop" onClick={handleStopRecording}>
+                Parar
+              </button>
+            </div>
+          )}
+          {!isRecording && (
+            <div className="header__title">
+              {videoFile ? videoFile.name : 'Cortador de vídeo'}
+            </div>
+          )}
         </div>
 
         <div className="header__controls">
@@ -195,7 +292,12 @@ function App() {
       <main className="main-content">
         <div className="preview-area">
           {!videoFile ? (
-            <VideoUpload onVideoLoad={handleVideoLoad} />
+            <VideoUpload
+              onVideoLoad={handleVideoLoad}
+              isRecording={isRecording}
+              onRecordingStart={handleRecordingStart}
+              onRecordingEnd={handleRecordingEnd}
+            />
           ) : (
             <VideoPreview
               videoFile={videoFile}
@@ -212,7 +314,7 @@ function App() {
       </main>
 
       {/* Timeline */}
-      {videoFile && (
+      {videoFile && videoMeta.duration > 0 && (
         <Timeline
           duration={videoMeta.duration}
           currentTime={currentTime}

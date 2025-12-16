@@ -1,21 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 
-export function ScreenRecorder({ onRecordingComplete }) {
-    const [state, setState] = useState('idle'); // idle | recording
-    const [duration, setDuration] = useState(0);
+export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingStart, onRecordingEnd }) {
     const [error, setError] = useState(null);
 
     const mediaRecorderRef = useRef(null);
     const streamRef = useRef(null);
     const chunksRef = useRef([]);
-    const timerRef = useRef(null);
-
-    // Format duration as MM:SS
-    const formatDuration = (seconds) => {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    };
 
     // Start recording
     const startRecording = async () => {
@@ -60,9 +50,7 @@ export function ScreenRecorder({ onRecordingComplete }) {
 
                 // Clean up
                 stopStream();
-                clearInterval(timerRef.current);
-                setDuration(0);
-                setState('idle');
+                onRecordingEnd();
 
                 // Send to editor
                 onRecordingComplete(file);
@@ -76,23 +64,16 @@ export function ScreenRecorder({ onRecordingComplete }) {
             };
 
             // Start recording
-            mediaRecorder.start(1000); // Collect data every second
-            setState('recording');
-            setDuration(0);
-
-            // Start timer
-            timerRef.current = setInterval(() => {
-                setDuration(d => d + 1);
-            }, 1000);
+            mediaRecorder.start(1000);
+            onRecordingStart();
 
         } catch (err) {
             console.error('Screen recording error:', err);
             if (err.name === 'NotAllowedError') {
-                setError('Permissão negada. Por favor, permita o compartilhamento de tela.');
+                setError('Permissão negada');
             } else {
-                setError('Erro ao iniciar gravação: ' + err.message);
+                setError('Erro: ' + err.message);
             }
-            setState('idle');
         }
     };
 
@@ -115,33 +96,21 @@ export function ScreenRecorder({ onRecordingComplete }) {
     useEffect(() => {
         return () => {
             stopStream();
-            if (timerRef.current) {
-                clearInterval(timerRef.current);
-            }
         };
     }, []);
 
-    if (state === 'recording') {
-        return (
-            <div className="screen-recorder screen-recorder--recording">
-                <div className="screen-recorder__indicator">
-                    <span className="screen-recorder__dot" />
-                    Gravando...
-                </div>
-                <div className="screen-recorder__timer">
-                    {formatDuration(duration)}
-                </div>
-                <button
-                    className="screen-recorder__stop-btn"
-                    onClick={stopRecording}
-                >
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                        <rect x="6" y="6" width="12" height="12" rx="2" />
-                    </svg>
-                    Parar Gravação
-                </button>
-            </div>
-        );
+    // Expose stop function
+    useEffect(() => {
+        if (isRecording) {
+            window.stopScreenRecording = stopRecording;
+        }
+        return () => {
+            delete window.stopScreenRecording;
+        };
+    }, [isRecording]);
+
+    if (isRecording) {
+        return null; // Recording indicator is shown in header
     }
 
     return (
