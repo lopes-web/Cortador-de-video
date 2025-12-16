@@ -83,62 +83,27 @@ export function VideoPreview({
         updateVideoDimensions();
     };
 
-    // For WebM files without duration, we play briefly to get the duration
+    // Listen for video events to update dimensions
     useEffect(() => {
         const video = videoRef.current;
         if (!video || !videoUrl) return;
 
-        let durationCheckInterval = null;
-
         const handleCanPlay = () => {
             updateVideoDimensions();
-
-            // If duration is still invalid, try playing briefly
-            if (!isFinite(video.duration) || video.duration <= 0) {
-                video.muted = true;
-                video.play().then(() => {
-                    // Check duration periodically while playing
-                    durationCheckInterval = setInterval(() => {
-                        if (isFinite(video.duration) && video.duration > 0) {
-                            video.pause();
-                            video.currentTime = 0;
-                            video.muted = false;
-                            updateVideoDimensions();
-                            clearInterval(durationCheckInterval);
-                        }
-                    }, 100);
-
-                    // Stop after 2 seconds max
-                    setTimeout(() => {
-                        if (durationCheckInterval) {
-                            clearInterval(durationCheckInterval);
-                            video.pause();
-                            video.currentTime = 0;
-                            video.muted = false;
-                            // Use what we have
-                            updateVideoDimensions();
-                        }
-                    }, 2000);
-                }).catch(() => {
-                    // Autoplay blocked, just update with what we have
-                    updateVideoDimensions();
-                });
-            }
         };
 
         const handleDurationChange = () => {
-            if (isFinite(video.duration) && video.duration > 0) {
-                updateVideoDimensions();
-            }
+            updateVideoDimensions();
         };
 
         video.addEventListener('canplay', handleCanPlay);
         video.addEventListener('durationchange', handleDurationChange);
+        video.addEventListener('loadeddata', handleCanPlay);
 
         return () => {
-            if (durationCheckInterval) clearInterval(durationCheckInterval);
             video.removeEventListener('canplay', handleCanPlay);
             video.removeEventListener('durationchange', handleDurationChange);
+            video.removeEventListener('loadeddata', handleCanPlay);
         };
     }, [videoUrl, updateVideoDimensions]);
 

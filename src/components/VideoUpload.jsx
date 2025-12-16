@@ -50,11 +50,13 @@ export function VideoUpload({ onVideoLoad, isRecording, onRecordingStart, onReco
             return;
         }
 
-        onVideoLoad(file);
+        // Regular file upload, no known duration
+        onVideoLoad(file, null);
     };
 
-    const handleRecordingComplete = (file) => {
-        onVideoLoad(file);
+    const handleRecordingComplete = (file, duration) => {
+        // Screen recording with known duration
+        onVideoLoad(file, duration);
     };
 
     // When recording, show minimal UI

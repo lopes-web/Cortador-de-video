@@ -60,8 +60,8 @@ function App() {
     }
   };
 
-  // Handle video load
-  const handleVideoLoad = useCallback(async (file) => {
+  // Handle video load - accepts optional known duration for screen recordings
+  const handleVideoLoad = useCallback(async (file, knownDuration = null) => {
     setVideoFile(file);
     setIsPlaying(false);
     setCurrentTime(0);
@@ -69,9 +69,19 @@ function App() {
     setSelectedRatio(null);
     setThumbnails([]);
 
-    // Skip thumbnail generation for screen recordings (WebM) to avoid errors
+    // Check if this is a screen recording
     const isScreenRecording = file.type === 'video/webm' && file.name.startsWith('gravacao_');
 
+    // If we have a known duration (from screen recording), set it immediately
+    if (knownDuration && knownDuration > 0) {
+      // We'll set the video meta when dimensions are available
+      // Store the known duration for later use
+      window._knownVideoDuration = knownDuration;
+    } else {
+      window._knownVideoDuration = null;
+    }
+
+    // Skip thumbnail generation for screen recordings to avoid errors
     if (!isScreenRecording) {
       try {
         const thumbs = await generateThumbnails(file, 15);
@@ -95,12 +105,17 @@ function App() {
     setTrimEnd(0);
   };
 
-  // Handle video metadata loaded - with validation for WebM
+  // Handle video metadata loaded - use known duration for screen recordings
   const handleLoadedMetadata = useCallback((meta) => {
-    // Validate duration (WebM from screen recording may have Infinity)
-    let duration = meta.duration;
-    if (!isFinite(duration) || isNaN(duration) || duration <= 0) {
-      duration = 0;
+    // Use known duration from screen recording if available
+    let duration = window._knownVideoDuration;
+
+    // If no known duration, try to get from video (may be Infinity for WebM)
+    if (!duration || duration <= 0) {
+      duration = meta.duration;
+      if (!isFinite(duration) || isNaN(duration) || duration <= 0) {
+        duration = 0;
+      }
     }
 
     setVideoMeta({
@@ -115,6 +130,9 @@ function App() {
     });
     setTrimStart(0);
     setTrimEnd(duration);
+
+    // Clear known duration after use
+    window._knownVideoDuration = null;
   }, []);
 
   // Update duration when it becomes available
