@@ -63,25 +63,24 @@ export async function processVideo(file, options, onProgress) {
 
   await ff.writeFile(inputName, await fetchFile(file));
 
-  // Build FFmpeg command
+  // Build FFmpeg command - use output seeking for accuracy with filters
   const videoFilters = [];
   const audioFilters = [];
-  const args = [];
+  const args = ['-i', inputName];
 
-  // For accurate seeking, put -ss before -i (input seeking)
-  if (trimStart > 0) {
-    args.push('-ss', trimStart.toFixed(3));
+  // Add trim filter for precise cutting (works with other filters)
+  const hasTrim = trimStart > 0 || (trimEnd !== null && trimEnd > 0);
+  if (hasTrim) {
+    videoFilters.push(`trim=start=${trimStart.toFixed(3)}:end=${trimEnd.toFixed(3)}`);
+    videoFilters.push('setpts=PTS-STARTPTS'); // Reset timestamps after trim
+
+    if (!isGif) {
+      audioFilters.push(`atrim=start=${trimStart.toFixed(3)}:end=${trimEnd.toFixed(3)}`);
+      audioFilters.push('asetpts=PTS-STARTPTS');
+    }
   }
 
-  args.push('-i', inputName);
-
-  // Duration after input for accurate output duration
-  if (trimEnd !== null && trimEnd > trimStart) {
-    const duration = trimEnd - trimStart;
-    args.push('-t', duration.toFixed(3));
-  }
-
-  // Speed adjustment
+  // Speed adjustment (after trim)
   if (speed !== 1) {
     videoFilters.push(`setpts=${(1 / speed).toFixed(4)}*PTS`);
 
@@ -116,7 +115,7 @@ export async function processVideo(file, options, onProgress) {
     }
   }
 
-  // Crop
+  // Crop (after speed)
   if (cropWidth && cropHeight) {
     videoFilters.push(`crop=${Math.round(cropWidth)}:${Math.round(cropHeight)}:${Math.round(cropX)}:${Math.round(cropY)}`);
   }
@@ -135,10 +134,10 @@ export async function processVideo(file, options, onProgress) {
       videoFilters.push(`scale='min(${gifSettings.scale},iw)':-1:flags=lanczos`);
     }
 
-    // Build simple filter for GIF with palette (two-pass style in one command)
+    // Build filter for GIF with palette
     const baseFilters = videoFilters.join(',');
     args.push('-filter_complex',
-      `${baseFilters},split[s0][s1];[s0]palettegen=max_colors=256:stats_mode=full[p];[s1][p]paletteuse=dither=sierra2_4a`
+      `[0:v]${baseFilters},split[s0][s1];[s0]palettegen=max_colors=256:stats_mode=full[p];[s1][p]paletteuse=dither=sierra2_4a`
     );
 
     // GIF output - loop forever (0 = infinite loop)
@@ -149,7 +148,7 @@ export async function processVideo(file, options, onProgress) {
     // MP4 processing
     const videoSettings = VIDEO_QUALITY[quality] || VIDEO_QUALITY.medium;
 
-    // Apply video filters
+    // Apply filters using filter_complex for precise control
     if (videoFilters.length > 0 || audioFilters.length > 0) {
       if (videoFilters.length > 0 && audioFilters.length > 0) {
         args.push('-filter_complex',
