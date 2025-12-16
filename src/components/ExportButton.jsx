@@ -5,10 +5,14 @@ export function ExportButton({ videoFile, cropArea, speed, trimStart, trimEnd, d
     const [isExporting, setIsExporting] = useState(false);
     const [progress, setProgress] = useState(0);
     const [status, setStatus] = useState('');
+    const [showOptions, setShowOptions] = useState(false);
+    const [format, setFormat] = useState('mp4');
+    const [quality, setQuality] = useState('medium');
 
     const handleExport = async () => {
         if (!videoFile || isExporting) return;
 
+        setShowOptions(false);
         setIsExporting(true);
         setProgress(0);
         setStatus('Inicializando FFmpeg...');
@@ -22,10 +26,12 @@ export function ExportButton({ videoFile, cropArea, speed, trimStart, trimEnd, d
                 speed,
                 trimStart,
                 trimEnd,
+                format,
+                quality,
             }, (p) => {
                 setProgress(p);
                 if (p < 30) {
-                    setStatus('Processando vídeo...');
+                    setStatus('Processando...');
                 } else if (p < 70) {
                     setStatus('Aplicando efeitos...');
                 } else {
@@ -36,12 +42,13 @@ export function ExportButton({ videoFile, cropArea, speed, trimStart, trimEnd, d
             // Get original filename without extension
             const originalName = videoFile.name.replace(/\.[^/.]+$/, '');
             const timestamp = new Date().toISOString().slice(0, 10);
+            const extension = format === 'gif' ? 'gif' : 'mp4';
 
-            // Download the processed video as MP4
+            // Download the processed file
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `${originalName}_edited_${timestamp}.mp4`;
+            a.download = `${originalName}_edited_${timestamp}.${extension}`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -59,15 +66,15 @@ export function ExportButton({ videoFile, cropArea, speed, trimStart, trimEnd, d
             setStatus('');
             setIsExporting(false);
             setProgress(0);
-            alert('Erro ao exportar vídeo: ' + error.message);
+            alert('Erro ao exportar: ' + error.message);
         }
     };
 
     return (
-        <>
+        <div className="export-container">
             <button
                 className="export-btn"
-                onClick={handleExport}
+                onClick={() => setShowOptions(!showOptions)}
                 disabled={disabled || isExporting}
             >
                 {isExporting ? (
@@ -82,10 +89,60 @@ export function ExportButton({ videoFile, cropArea, speed, trimStart, trimEnd, d
                             <polyline points="7 10 12 15 17 10" />
                             <line x1="12" y1="15" x2="12" y2="3" />
                         </svg>
-                        Exportar MP4
+                        Exportar
                     </>
                 )}
             </button>
+
+            {showOptions && !isExporting && (
+                <div className="export-options">
+                    <div className="export-options__section">
+                        <label className="export-options__label">Formato</label>
+                        <div className="export-options__buttons">
+                            <button
+                                className={`export-option-btn ${format === 'mp4' ? 'export-option-btn--active' : ''}`}
+                                onClick={() => setFormat('mp4')}
+                            >
+                                MP4
+                            </button>
+                            <button
+                                className={`export-option-btn ${format === 'gif' ? 'export-option-btn--active' : ''}`}
+                                onClick={() => setFormat('gif')}
+                            >
+                                GIF
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="export-options__section">
+                        <label className="export-options__label">Qualidade</label>
+                        <div className="export-options__buttons">
+                            <button
+                                className={`export-option-btn ${quality === 'low' ? 'export-option-btn--active' : ''}`}
+                                onClick={() => setQuality('low')}
+                            >
+                                Baixa
+                            </button>
+                            <button
+                                className={`export-option-btn ${quality === 'medium' ? 'export-option-btn--active' : ''}`}
+                                onClick={() => setQuality('medium')}
+                            >
+                                Média
+                            </button>
+                            <button
+                                className={`export-option-btn ${quality === 'high' ? 'export-option-btn--active' : ''}`}
+                                onClick={() => setQuality('high')}
+                            >
+                                Alta
+                            </button>
+                        </div>
+                    </div>
+
+                    <button className="export-confirm-btn" onClick={handleExport}>
+                        Exportar {format.toUpperCase()}
+                    </button>
+                </div>
+            )}
 
             {isExporting && (
                 <div className="modal-overlay">
@@ -93,7 +150,9 @@ export function ExportButton({ videoFile, cropArea, speed, trimStart, trimEnd, d
                         <div className="modal__icon">
                             <div className="loading-spinner" />
                         </div>
-                        <h3 className="modal__title">Processando vídeo</h3>
+                        <h3 className="modal__title">
+                            Exportando {format.toUpperCase()}
+                        </h3>
                         <div className="progress-bar">
                             <div
                                 className="progress-bar__fill"
@@ -106,6 +165,6 @@ export function ExportButton({ videoFile, cropArea, speed, trimStart, trimEnd, d
                     </div>
                 </div>
             )}
-        </>
+        </div>
     );
 }

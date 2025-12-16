@@ -634,6 +634,11 @@ select {
   font-variant-numeric: tabular-nums;
 }
 
+/* Export Container */
+.export-container {
+  position: relative;
+}
+
 /* Export Button */
 .export-btn {
   padding: var(--spacing-sm) var(--spacing-lg);
@@ -653,6 +658,79 @@ select {
 
 .export-btn:disabled {
   opacity: 0.5;
+}
+
+/* Export Options Dropdown */
+.export-options {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: var(--spacing-sm);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-bg-tertiary);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  min-width: 200px;
+  z-index: 100;
+}
+
+.export-options__section {
+  margin-bottom: var(--spacing-md);
+}
+
+.export-options__section:last-of-type {
+  margin-bottom: var(--spacing-md);
+}
+
+.export-options__label {
+  display: block;
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  margin-bottom: var(--spacing-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.export-options__buttons {
+  display: flex;
+  gap: 2px;
+}
+
+.export-option-btn {
+  flex: 1;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+}
+
+.export-option-btn:hover {
+  background: var(--color-bg-card);
+  color: var(--color-text-primary);
+}
+
+.export-option-btn--active {
+  background: var(--color-bg-card);
+  color: var(--color-text-primary);
+}
+
+.export-confirm-btn {
+  width: 100%;
+  padding: var(--spacing-sm);
+  background: var(--color-text-primary);
+  color: var(--color-bg-primary);
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+}
+
+.export-confirm-btn:hover {
+  background: var(--color-accent-secondary);
 }
 
 /* New Video Button */

@@ -6,26 +6,40 @@ let loaded = false;
 
 export async function initFFmpeg(onProgress) {
   if (loaded) return ffmpeg;
-  
+
   ffmpeg = new FFmpeg();
-  
+
   ffmpeg.on('progress', ({ progress }) => {
     if (onProgress) {
       onProgress(Math.round(progress * 100));
     }
   });
-  
+
   // Load FFmpeg WASM
   const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
-  
+
   await ffmpeg.load({
     coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
     wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
   });
-  
+
   loaded = true;
   return ffmpeg;
 }
+
+// Quality presets for video
+const VIDEO_QUALITY = {
+  low: { crf: 28, preset: 'fast' },
+  medium: { crf: 23, preset: 'medium' },
+  high: { crf: 18, preset: 'slow' },
+};
+
+// Quality presets for GIF (fps and scale)
+const GIF_QUALITY = {
+  low: { fps: 10, scale: 320 },
+  medium: { fps: 15, scale: 480 },
+  high: { fps: 20, scale: 640 },
+};
 
 export async function processVideo(file, options, onProgress) {
   const {
@@ -36,20 +50,24 @@ export async function processVideo(file, options, onProgress) {
     speed = 1,
     trimStart = 0,
     trimEnd = null,
+    format = 'mp4', // 'mp4' or 'gif'
+    quality = 'medium', // 'low', 'medium', 'high'
   } = options;
-  
+
   const ff = await initFFmpeg(onProgress);
-  
+
   // Write input file
   const inputName = 'input' + getExtension(file.name);
-  const outputName = 'output.mp4';
-  
+  const isGif = format === 'gif';
+  const outputName = isGif ? 'output.gif' : 'output.mp4';
+
   await ff.writeFile(inputName, await fetchFile(file));
-  
+
   // Build FFmpeg command
-  const filters = [];
+  const videoFilters = [];
+  const audioFilters = [];
   const args = ['-i', inputName];
-  
+
   // Trim
   if (trimStart > 0) {
     args.push('-ss', String(trimStart));
@@ -57,86 +75,116 @@ export async function processVideo(file, options, onProgress) {
   if (trimEnd !== null) {
     args.push('-t', String(trimEnd - trimStart));
   }
-  
+
   // Speed
   if (speed !== 1) {
-    // Video speed: setpts=PTS/speed
-    // Audio speed: atempo (only supports 0.5 to 2.0, chain for more)
-    const videoFilter = `setpts=${(1/speed).toFixed(4)}*PTS`;
-    let audioFilter = '';
-    
-    if (speed >= 0.5 && speed <= 2.0) {
-      audioFilter = `atempo=${speed}`;
-    } else if (speed > 2.0) {
-      // Chain atempo filters for speeds > 2
-      const atempoCount = Math.ceil(Math.log(speed) / Math.log(2));
-      const atempoFilters = [];
-      let remainingSpeed = speed;
-      for (let i = 0; i < atempoCount; i++) {
-        const thisSpeed = Math.min(2.0, remainingSpeed);
-        atempoFilters.push(`atempo=${thisSpeed}`);
-        remainingSpeed /= thisSpeed;
+    videoFilters.push(`setpts=${(1 / speed).toFixed(4)}*PTS`);
+
+    if (!isGif) {
+      // Audio speed adjustment (only for video, not GIF)
+      let audioFilter = '';
+      if (speed >= 0.5 && speed <= 2.0) {
+        audioFilter = `atempo=${speed}`;
+      } else if (speed > 2.0) {
+        const atempoCount = Math.ceil(Math.log(speed) / Math.log(2));
+        const atempoFiltersArr = [];
+        let remainingSpeed = speed;
+        for (let i = 0; i < atempoCount; i++) {
+          const thisSpeed = Math.min(2.0, remainingSpeed);
+          atempoFiltersArr.push(`atempo=${thisSpeed}`);
+          remainingSpeed /= thisSpeed;
+        }
+        audioFilter = atempoFiltersArr.join(',');
+      } else {
+        const atempoCount = Math.ceil(Math.log(1 / speed) / Math.log(2));
+        const atempoFiltersArr = [];
+        let remainingSpeed = speed;
+        for (let i = 0; i < atempoCount; i++) {
+          const thisSpeed = Math.max(0.5, remainingSpeed);
+          atempoFiltersArr.push(`atempo=${thisSpeed}`);
+          remainingSpeed /= thisSpeed;
+        }
+        audioFilter = atempoFiltersArr.join(',');
       }
-      audioFilter = atempoFilters.join(',');
-    } else {
-      // Chain atempo filters for speeds < 0.5
-      const atempoCount = Math.ceil(Math.log(1/speed) / Math.log(2));
-      const atempoFilters = [];
-      let remainingSpeed = speed;
-      for (let i = 0; i < atempoCount; i++) {
-        const thisSpeed = Math.max(0.5, remainingSpeed);
-        atempoFilters.push(`atempo=${thisSpeed}`);
-        remainingSpeed /= thisSpeed;
+      if (audioFilter) {
+        audioFilters.push(audioFilter);
       }
-      audioFilter = atempoFilters.join(',');
     }
-    
-    filters.push({ video: videoFilter, audio: audioFilter });
   }
-  
+
   // Crop
   if (cropWidth && cropHeight) {
-    const cropFilter = `crop=${Math.round(cropWidth)}:${Math.round(cropHeight)}:${Math.round(cropX)}:${Math.round(cropY)}`;
-    filters.push({ video: cropFilter });
+    videoFilters.push(`crop=${Math.round(cropWidth)}:${Math.round(cropHeight)}:${Math.round(cropX)}:${Math.round(cropY)}`);
   }
-  
-  // Build filter complex
-  if (filters.length > 0) {
-    const videoFilters = filters.map(f => f.video).filter(Boolean).join(',');
-    const audioFilters = filters.map(f => f.audio).filter(Boolean).join(',');
-    
-    if (videoFilters && audioFilters) {
-      args.push('-filter_complex', `[0:v]${videoFilters}[v];[0:a]${audioFilters}[a]`);
-      args.push('-map', '[v]', '-map', '[a]');
-    } else if (videoFilters) {
-      args.push('-vf', videoFilters);
-    } else if (audioFilters) {
-      args.push('-af', audioFilters);
+
+  if (isGif) {
+    // GIF-specific processing
+    const gifSettings = GIF_QUALITY[quality] || GIF_QUALITY.medium;
+
+    // Add fps and scale for GIF
+    videoFilters.push(`fps=${gifSettings.fps}`);
+
+    // Scale to max width while maintaining aspect ratio
+    if (cropWidth && cropWidth > gifSettings.scale) {
+      videoFilters.push(`scale=${gifSettings.scale}:-1:flags=lanczos`);
+    } else if (!cropWidth) {
+      videoFilters.push(`scale='min(${gifSettings.scale},iw)':-1:flags=lanczos`);
     }
+
+    // Split for palette generation (better quality GIF)
+    videoFilters.push('split[s0][s1]');
+
+    // Build filter complex for GIF with palette
+    const baseFilters = videoFilters.slice(0, -1).join(','); // All filters except split
+    args.push('-filter_complex',
+      `${baseFilters},split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5`
+    );
+
+    // GIF output
+    args.push('-loop', '0', outputName);
+
+  } else {
+    // MP4 processing
+    const videoSettings = VIDEO_QUALITY[quality] || VIDEO_QUALITY.medium;
+
+    // Apply video filters
+    if (videoFilters.length > 0 || audioFilters.length > 0) {
+      if (videoFilters.length > 0 && audioFilters.length > 0) {
+        args.push('-filter_complex',
+          `[0:v]${videoFilters.join(',')}[v];[0:a]${audioFilters.join(',')}[a]`
+        );
+        args.push('-map', '[v]', '-map', '[a]');
+      } else if (videoFilters.length > 0) {
+        args.push('-vf', videoFilters.join(','));
+      } else if (audioFilters.length > 0) {
+        args.push('-af', audioFilters.join(','));
+      }
+    }
+
+    // Output settings for MP4
+    args.push(
+      '-c:v', 'libx264',
+      '-preset', videoSettings.preset,
+      '-crf', String(videoSettings.crf),
+      '-c:a', 'aac',
+      '-b:a', '128k',
+      outputName
+    );
   }
-  
-  // Output settings
-  args.push(
-    '-c:v', 'libx264',
-    '-preset', 'fast',
-    '-crf', '23',
-    '-c:a', 'aac',
-    '-b:a', '128k',
-    outputName
-  );
-  
+
   console.log('FFmpeg args:', args.join(' '));
-  
+
   await ff.exec(args);
-  
+
   // Read output file
   const data = await ff.readFile(outputName);
-  
+
   // Cleanup
   await ff.deleteFile(inputName);
   await ff.deleteFile(outputName);
-  
-  return new Blob([data.buffer], { type: 'video/mp4' });
+
+  const mimeType = isGif ? 'image/gif' : 'video/mp4';
+  return new Blob([data.buffer], { type: mimeType });
 }
 
 function getExtension(filename) {
