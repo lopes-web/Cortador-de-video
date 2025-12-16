@@ -55,8 +55,11 @@ function App() {
   }, []);
 
   const handleStopRecording = () => {
+    console.log('handleStopRecording called, window.stopScreenRecording:', !!window.stopScreenRecording);
     if (window.stopScreenRecording) {
       window.stopScreenRecording();
+    } else {
+      console.error('stopScreenRecording not found on window');
     }
   };
 
