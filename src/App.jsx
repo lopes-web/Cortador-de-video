@@ -67,14 +67,19 @@ function App() {
     setCurrentTime(0);
     setSpeed(1);
     setSelectedRatio(null);
+    setThumbnails([]);
 
-    // Generate thumbnails
-    try {
-      const thumbs = await generateThumbnails(file, 15);
-      setThumbnails(thumbs);
-    } catch (err) {
-      console.error('Failed to generate thumbnails:', err);
-      setThumbnails([]);
+    // Skip thumbnail generation for screen recordings (WebM) to avoid errors
+    const isScreenRecording = file.type === 'video/webm' && file.name.startsWith('gravacao_');
+
+    if (!isScreenRecording) {
+      try {
+        const thumbs = await generateThumbnails(file, 15);
+        setThumbnails(thumbs);
+      } catch (err) {
+        console.warn('Failed to generate thumbnails:', err);
+        setThumbnails([]);
+      }
     }
   }, []);
 

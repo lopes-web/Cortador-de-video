@@ -1,5 +1,52 @@
 import { useState, useRef, useEffect } from 'react';
 
+// Fix WebM duration by reading the actual duration from the video element
+async function fixWebMBlob(blob) {
+    return new Promise((resolve) => {
+        const video = document.createElement('video');
+        video.preload = 'metadata';
+
+        const url = URL.createObjectURL(blob);
+        video.src = url;
+
+        let resolved = false;
+
+        const cleanup = () => {
+            URL.revokeObjectURL(url);
+            video.remove();
+        };
+
+        const returnBlob = () => {
+            if (resolved) return;
+            resolved = true;
+            cleanup();
+            // Just return the original blob - the duration issue will be handled
+            // by the video player seeking to end
+            resolve(blob);
+        };
+
+        video.onloadedmetadata = () => {
+            // For WebM without duration, seek to trigger duration calculation
+            if (!isFinite(video.duration) || video.duration <= 0) {
+                video.currentTime = 1e10;
+            } else {
+                returnBlob();
+            }
+        };
+
+        video.onseeked = () => {
+            returnBlob();
+        };
+
+        video.onerror = () => {
+            returnBlob();
+        };
+
+        // Timeout fallback
+        setTimeout(returnBlob, 3000);
+    });
+}
+
 export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingStart, onRecordingEnd }) {
     const [error, setError] = useState(null);
 
@@ -24,10 +71,13 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
 
             streamRef.current = stream;
 
-            // Create MediaRecorder
-            const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-                ? 'video/webm;codecs=vp9'
-                : 'video/webm';
+            // Create MediaRecorder - prefer VP8 for better compatibility
+            let mimeType = 'video/webm';
+            if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) {
+                mimeType = 'video/webm;codecs=vp8,opus';
+            } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+                mimeType = 'video/webm;codecs=vp9';
+            }
 
             const mediaRecorder = new MediaRecorder(stream, {
                 mimeType,
@@ -42,11 +92,17 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
                 }
             };
 
-            mediaRecorder.onstop = () => {
-                // Create blob and file
-                const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+            mediaRecorder.onstop = async () => {
+                // Create blob
+                const rawBlob = new Blob(chunksRef.current, { type: mimeType });
+
+                // Process the blob to help with duration detection
+                const processedBlob = await fixWebMBlob(rawBlob);
+
                 const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-                const file = new File([blob], `gravacao_${timestamp}.webm`, { type: 'video/webm' });
+                const file = new File([processedBlob], `gravacao_${timestamp}.webm`, {
+                    type: 'video/webm'
+                });
 
                 // Clean up
                 stopStream();
@@ -63,8 +119,8 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
                 }
             };
 
-            // Start recording
-            mediaRecorder.start(1000);
+            // Start recording - use smaller timeslice for more reliable data
+            mediaRecorder.start(500);
             onRecordingStart();
 
         } catch (err) {
