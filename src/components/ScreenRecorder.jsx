@@ -1,19 +1,40 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+
+// Keep refs outside component to avoid cleanup issues
+let globalStreamRef = null;
+let globalMediaRecorderRef = null;
+let globalChunksRef = [];
+let globalStartTime = null;
+let globalIsActive = false;
 
 export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingStart, onRecordingEnd }) {
     const [error, setError] = useState(null);
 
-    const mediaRecorderRef = useRef(null);
-    const streamRef = useRef(null);
-    const chunksRef = useRef([]);
-    const startTimeRef = useRef(null);
-    const isRecordingActiveRef = useRef(false);
+    // Stop stream helper
+    const stopStream = useCallback(() => {
+        if (globalStreamRef) {
+            console.log('Stopping stream tracks...');
+            globalStreamRef.getTracks().forEach(track => {
+                console.log('Stopping track:', track.kind);
+                track.stop();
+            });
+            globalStreamRef = null;
+        }
+    }, []);
+
+    // Stop recording helper
+    const stopRecording = useCallback(() => {
+        console.log('Stop recording called, state:', globalMediaRecorderRef?.state, 'active:', globalIsActive);
+        if (globalMediaRecorderRef && globalMediaRecorderRef.state === 'recording') {
+            globalMediaRecorderRef.stop();
+        }
+    }, []);
 
     // Start recording
     const startRecording = async () => {
         setError(null);
-        chunksRef.current = [];
-        isRecordingActiveRef.current = false;
+        globalChunksRef = [];
+        globalIsActive = false;
 
         try {
             console.log('Requesting screen capture...');
@@ -31,7 +52,7 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
 
             console.log('Stream obtained:', stream.getTracks().map(t => t.kind));
 
-            streamRef.current = stream;
+            globalStreamRef = stream;
 
             // Create MediaRecorder
             let mimeType = 'video/webm';
@@ -44,47 +65,43 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
 
             const mediaRecorder = new MediaRecorder(stream, {
                 mimeType,
-                videoBitsPerSecond: 2500000 // 2.5 Mbps
+                videoBitsPerSecond: 2500000
             });
 
-            mediaRecorderRef.current = mediaRecorder;
+            globalMediaRecorderRef = mediaRecorder;
 
             mediaRecorder.ondataavailable = (e) => {
                 console.log('Data available:', e.data.size, 'bytes');
                 if (e.data.size > 0) {
-                    chunksRef.current.push(e.data);
+                    globalChunksRef.push(e.data);
                 }
             };
 
             mediaRecorder.onstart = () => {
                 console.log('MediaRecorder started');
-                isRecordingActiveRef.current = true;
-                startTimeRef.current = Date.now();
+                globalIsActive = true;
+                globalStartTime = Date.now();
             };
 
             mediaRecorder.onstop = () => {
-                console.log('MediaRecorder stopped, chunks:', chunksRef.current.length, 'active:', isRecordingActiveRef.current);
-                isRecordingActiveRef.current = false;
+                console.log('MediaRecorder stopped, chunks:', globalChunksRef.length, 'active:', globalIsActive);
+                globalIsActive = false;
 
-                // Only process if we have actual recorded data
-                if (chunksRef.current.length === 0) {
+                if (globalChunksRef.length === 0) {
                     console.warn('Recording stopped but no data was captured');
                     stopStream();
                     onRecordingEnd();
                     return;
                 }
 
-                // Calculate duration from start time
                 const endTime = Date.now();
-                const durationMs = endTime - (startTimeRef.current || endTime);
+                const durationMs = endTime - (globalStartTime || endTime);
                 const durationSeconds = Math.max(1, durationMs / 1000);
                 console.log('Recording duration:', durationSeconds, 'seconds');
 
-                // Create blob
-                const blob = new Blob(chunksRef.current, { type: mimeType });
+                const blob = new Blob(globalChunksRef, { type: mimeType });
                 console.log('Blob size:', blob.size, 'bytes');
 
-                // Only proceed if blob has actual content
                 if (blob.size < 1000) {
                     console.warn('Recording too short or empty');
                     stopStream();
@@ -99,11 +116,8 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
 
                 console.log('File created:', file.name, file.size, 'bytes');
 
-                // Clean up
                 stopStream();
                 onRecordingEnd();
-
-                // Send to editor with known duration
                 onRecordingComplete(file, durationSeconds);
             };
 
@@ -112,29 +126,28 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
             };
 
             // Handle user stopping share from browser UI
-            // Only stop if recording has actually started
             const videoTrack = stream.getVideoTracks()[0];
             videoTrack.onended = () => {
-                console.log('Video track ended, isActive:', isRecordingActiveRef.current);
-                if (isRecordingActiveRef.current && mediaRecorderRef.current) {
-                    if (mediaRecorderRef.current.state === 'recording') {
-                        console.log('Stopping MediaRecorder from track end');
-                        mediaRecorderRef.current.stop();
-                    }
-                } else {
-                    // Track ended before recording started - just clean up
+                console.log('Video track ended, isActive:', globalIsActive);
+                if (globalIsActive && globalMediaRecorderRef && globalMediaRecorderRef.state === 'recording') {
+                    console.log('Stopping MediaRecorder from track end');
+                    globalMediaRecorderRef.stop();
+                } else if (!globalIsActive) {
                     console.log('Track ended before recording started');
                     stopStream();
                     onRecordingEnd();
                 }
             };
 
-            // Start recording
+            // Start recording FIRST, then notify parent
             console.log('Starting MediaRecorder...');
-            mediaRecorder.start(1000); // Get data every second
+            mediaRecorder.start(1000);
 
-            // Notify parent that recording has started
-            onRecordingStart();
+            // Small delay before notifying parent to ensure recorder is started
+            setTimeout(() => {
+                console.log('Notifying parent that recording started');
+                onRecordingStart();
+            }, 100);
 
         } catch (err) {
             console.error('Screen recording error:', err);
@@ -146,34 +159,7 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
         }
     };
 
-    // Stop recording
-    const stopRecording = () => {
-        console.log('Stop recording called, state:', mediaRecorderRef.current?.state, 'active:', isRecordingActiveRef.current);
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-            mediaRecorderRef.current.stop();
-        }
-    };
-
-    // Stop stream
-    const stopStream = () => {
-        if (streamRef.current) {
-            console.log('Stopping stream tracks...');
-            streamRef.current.getTracks().forEach(track => {
-                console.log('Stopping track:', track.kind);
-                track.stop();
-            });
-            streamRef.current = null;
-        }
-    };
-
-    // Cleanup on unmount
-    useEffect(() => {
-        return () => {
-            stopStream();
-        };
-    }, []);
-
-    // Expose stop function
+    // Expose stop function when recording
     useEffect(() => {
         if (isRecording) {
             window.stopScreenRecording = stopRecording;
@@ -181,10 +167,11 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
         return () => {
             delete window.stopScreenRecording;
         };
-    }, [isRecording]);
+    }, [isRecording, stopRecording]);
 
+    // Don't render anything when recording (indicator is in header)
     if (isRecording) {
-        return null; // Recording indicator is shown in header
+        return null;
     }
 
     return (
