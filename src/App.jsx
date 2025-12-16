@@ -117,43 +117,26 @@ function App() {
     setTrimEnd(duration);
   }, []);
 
-  // Fix WebM duration after video can play through
+  // Update duration when it becomes available
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !videoFile) return;
 
-    const fixDuration = () => {
+    const updateDuration = () => {
       if (isFinite(video.duration) && video.duration > 0 && videoMeta.duration === 0) {
         setVideoMeta(prev => ({ ...prev, duration: video.duration }));
         setTrimEnd(video.duration);
       }
     };
 
-    // For WebM, we need to seek to get true duration
-    const seekToEnd = () => {
-      if (!isFinite(video.duration) || video.duration === 0) {
-        video.currentTime = 1e101; // Seek to end
-      }
-    };
-
-    const onSeeked = () => {
-      if (isFinite(video.duration) && video.duration > 0) {
-        setVideoMeta(prev => ({ ...prev, duration: video.duration }));
-        setTrimEnd(video.duration);
-        video.currentTime = 0;
-      }
-    };
-
-    video.addEventListener('loadeddata', seekToEnd);
-    video.addEventListener('seeked', onSeeked);
-    video.addEventListener('durationchange', fixDuration);
-    video.addEventListener('canplaythrough', fixDuration);
+    video.addEventListener('durationchange', updateDuration);
+    video.addEventListener('canplaythrough', updateDuration);
+    video.addEventListener('timeupdate', updateDuration);
 
     return () => {
-      video.removeEventListener('loadeddata', seekToEnd);
-      video.removeEventListener('seeked', onSeeked);
-      video.removeEventListener('durationchange', fixDuration);
-      video.removeEventListener('canplaythrough', fixDuration);
+      video.removeEventListener('durationchange', updateDuration);
+      video.removeEventListener('canplaythrough', updateDuration);
+      video.removeEventListener('timeupdate', updateDuration);
     };
   }, [videoFile, videoMeta.duration]);
 

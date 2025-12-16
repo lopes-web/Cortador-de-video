@@ -83,13 +83,47 @@ export function VideoPreview({
         updateVideoDimensions();
     };
 
-    // For WebM files, we need to listen for multiple events
+    // For WebM files without duration, we play briefly to get the duration
     useEffect(() => {
         const video = videoRef.current;
         if (!video || !videoUrl) return;
 
+        let durationCheckInterval = null;
+
         const handleCanPlay = () => {
             updateVideoDimensions();
+
+            // If duration is still invalid, try playing briefly
+            if (!isFinite(video.duration) || video.duration <= 0) {
+                video.muted = true;
+                video.play().then(() => {
+                    // Check duration periodically while playing
+                    durationCheckInterval = setInterval(() => {
+                        if (isFinite(video.duration) && video.duration > 0) {
+                            video.pause();
+                            video.currentTime = 0;
+                            video.muted = false;
+                            updateVideoDimensions();
+                            clearInterval(durationCheckInterval);
+                        }
+                    }, 100);
+
+                    // Stop after 2 seconds max
+                    setTimeout(() => {
+                        if (durationCheckInterval) {
+                            clearInterval(durationCheckInterval);
+                            video.pause();
+                            video.currentTime = 0;
+                            video.muted = false;
+                            // Use what we have
+                            updateVideoDimensions();
+                        }
+                    }, 2000);
+                }).catch(() => {
+                    // Autoplay blocked, just update with what we have
+                    updateVideoDimensions();
+                });
+            }
         };
 
         const handleDurationChange = () => {
@@ -98,31 +132,13 @@ export function VideoPreview({
             }
         };
 
-        // For WebM without duration, seek to end to get real duration
-        const handleLoadedData = () => {
-            if (!isFinite(video.duration) || video.duration <= 0) {
-                // Seek to end to trigger duration calculation
-                video.currentTime = 1e10;
-            }
-        };
-
-        const handleSeeked = () => {
-            if (isFinite(video.duration) && video.duration > 0) {
-                video.currentTime = 0;
-                updateVideoDimensions();
-            }
-        };
-
         video.addEventListener('canplay', handleCanPlay);
         video.addEventListener('durationchange', handleDurationChange);
-        video.addEventListener('loadeddata', handleLoadedData);
-        video.addEventListener('seeked', handleSeeked);
 
         return () => {
+            if (durationCheckInterval) clearInterval(durationCheckInterval);
             video.removeEventListener('canplay', handleCanPlay);
             video.removeEventListener('durationchange', handleDurationChange);
-            video.removeEventListener('loadeddata', handleLoadedData);
-            video.removeEventListener('seeked', handleSeeked);
         };
     }, [videoUrl, updateVideoDimensions]);
 
