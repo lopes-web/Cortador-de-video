@@ -7,13 +7,13 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
     const streamRef = useRef(null);
     const chunksRef = useRef([]);
     const startTimeRef = useRef(null);
-    const isActiveRef = useRef(false);
+    const isRecordingActiveRef = useRef(false);
 
     // Start recording
     const startRecording = async () => {
         setError(null);
         chunksRef.current = [];
-        isActiveRef.current = false;
+        isRecordingActiveRef.current = false;
 
         try {
             console.log('Requesting screen capture...');
@@ -58,11 +58,13 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
 
             mediaRecorder.onstart = () => {
                 console.log('MediaRecorder started');
-                isActiveRef.current = true;
+                isRecordingActiveRef.current = true;
+                startTimeRef.current = Date.now();
             };
 
             mediaRecorder.onstop = () => {
-                console.log('MediaRecorder stopped, chunks:', chunksRef.current.length);
+                console.log('MediaRecorder stopped, chunks:', chunksRef.current.length, 'active:', isRecordingActiveRef.current);
+                isRecordingActiveRef.current = false;
 
                 // Only process if we have actual recorded data
                 if (chunksRef.current.length === 0) {
@@ -74,7 +76,7 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
 
                 // Calculate duration from start time
                 const endTime = Date.now();
-                const durationMs = endTime - startTimeRef.current;
+                const durationMs = endTime - (startTimeRef.current || endTime);
                 const durationSeconds = Math.max(1, durationMs / 1000);
                 console.log('Recording duration:', durationSeconds, 'seconds');
 
@@ -110,23 +112,28 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
             };
 
             // Handle user stopping share from browser UI
-            stream.getVideoTracks()[0].onended = () => {
-                console.log('Video track ended');
-                if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-                    mediaRecorderRef.current.stop();
+            // Only stop if recording has actually started
+            const videoTrack = stream.getVideoTracks()[0];
+            videoTrack.onended = () => {
+                console.log('Video track ended, isActive:', isRecordingActiveRef.current);
+                if (isRecordingActiveRef.current && mediaRecorderRef.current) {
+                    if (mediaRecorderRef.current.state === 'recording') {
+                        console.log('Stopping MediaRecorder from track end');
+                        mediaRecorderRef.current.stop();
+                    }
                 } else {
-                    // Track ended before recording started
+                    // Track ended before recording started - just clean up
+                    console.log('Track ended before recording started');
                     stopStream();
                     onRecordingEnd();
                 }
             };
 
-            // Record start time
-            startTimeRef.current = Date.now();
-
             // Start recording
             console.log('Starting MediaRecorder...');
             mediaRecorder.start(1000); // Get data every second
+
+            // Notify parent that recording has started
             onRecordingStart();
 
         } catch (err) {
@@ -141,7 +148,7 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
 
     // Stop recording
     const stopRecording = () => {
-        console.log('Stop recording called, state:', mediaRecorderRef.current?.state);
+        console.log('Stop recording called, state:', mediaRecorderRef.current?.state, 'active:', isRecordingActiveRef.current);
         if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
             mediaRecorderRef.current.stop();
         }
@@ -149,8 +156,8 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
 
     // Stop stream
     const stopStream = () => {
-        console.log('Stopping stream...');
         if (streamRef.current) {
+            console.log('Stopping stream tracks...');
             streamRef.current.getTracks().forEach(track => {
                 console.log('Stopping track:', track.kind);
                 track.stop();
