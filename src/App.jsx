@@ -5,7 +5,7 @@ import { Timeline } from './components/Timeline';
 import { CropControls } from './components/CropControls';
 import { SpeedControls } from './components/SpeedControls';
 import { ExportButton } from './components/ExportButton';
-import { generateThumbnails } from './utils/thumbnails';
+import { generateThumbnails, generateThumbnailsFromVideo } from './utils/thumbnails';
 import './index.css';
 
 function App() {
@@ -176,6 +176,40 @@ function App() {
       video.removeEventListener('timeupdate', updateDuration);
     };
   }, [videoFile, videoMeta.duration]);
+
+  // Generate thumbnails for screen recordings after video is ready
+  useEffect(() => {
+    const video = videoRef.current;
+    const isScreenRecording = videoFile?.type === 'video/webm' && videoFile?.name?.startsWith('gravacao_');
+
+    // Only for screen recordings that don't have thumbnails yet
+    if (!video || !isScreenRecording || thumbnails.length > 0 || videoMeta.duration <= 0) {
+      return;
+    }
+
+    const generateRecordingThumbnails = async () => {
+      // Wait for video to be ready
+      if (video.readyState >= 2 && video.videoWidth > 0) {
+        console.log('Generating thumbnails for screen recording...');
+        const thumbs = await generateThumbnailsFromVideo(video, videoMeta.duration, 15);
+        if (thumbs.length > 0) {
+          console.log('Generated', thumbs.length, 'thumbnails');
+          setThumbnails(thumbs);
+        }
+      }
+    };
+
+    // Try immediately
+    generateRecordingThumbnails();
+
+    // Also try on canplay
+    const onCanPlay = () => generateRecordingThumbnails();
+    video.addEventListener('canplay', onCanPlay);
+
+    return () => {
+      video.removeEventListener('canplay', onCanPlay);
+    };
+  }, [videoFile, videoMeta.duration, thumbnails.length]);
 
   // Play/Pause
   const handlePlayPause = useCallback(() => {

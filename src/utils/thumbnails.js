@@ -20,7 +20,6 @@ export async function generateThumbnails(videoFile, count = 10) {
 
         let duration = 0;
         let isWebM = videoFile.type === 'video/webm';
-        let hasTriedSeek = false;
 
         const cleanup = () => {
             URL.revokeObjectURL(url);
@@ -57,55 +56,32 @@ export async function generateThumbnails(videoFile, count = 10) {
             resolve(thumbnails);
         };
 
-        // For WebM from screen recording, we need special handling
-        const handleDurationFix = () => {
+        video.onloadedmetadata = () => {
+            if (isFinite(video.duration) && video.duration > 0) {
+                duration = video.duration;
+                video.currentTime = 0;
+            }
+        };
+
+        video.oncanplay = () => {
+            if (video.videoWidth > 0 && duration > 0 && thumbnails.length === 0) {
+                generateThumbs();
+            }
+        };
+
+        video.ondurationchange = () => {
             if (isFinite(video.duration) && video.duration > 0) {
                 duration = video.duration;
             }
         };
 
-        video.onloadedmetadata = () => {
-            handleDurationFix();
-
-            // If duration is Infinity (common for WebM), try seeking to end
-            if (!isFinite(duration) || duration <= 0) {
-                if (isWebM && !hasTriedSeek) {
-                    hasTriedSeek = true;
-                    // Seek to a very large time to trigger duration calculation
-                    video.currentTime = 1e10;
-                    return;
-                }
-            }
-
-            if (isFinite(duration) && duration > 0) {
-                video.currentTime = 0;
-                generateThumbs();
-            }
-        };
-
-        video.onseeked = () => {
-            handleDurationFix();
-
-            if (hasTriedSeek && isFinite(duration) && duration > 0) {
-                video.currentTime = 0;
-                // Wait for seek to beginning before generating
-                video.onseeked = () => {
-                    generateThumbs();
-                };
-            }
-        };
-
-        video.ondurationchange = () => {
-            handleDurationFix();
-        };
-
         video.onerror = () => {
             console.warn('Error loading video for thumbnails');
             cleanup();
-            resolve([]); // Return empty array instead of rejecting
+            resolve([]);
         };
 
-        // Timeout fallback - if nothing works after 5 seconds, give up on thumbnails
+        // Timeout fallback
         setTimeout(() => {
             if (thumbnails.length === 0) {
                 console.warn('Thumbnail generation timeout');
@@ -113,6 +89,78 @@ export async function generateThumbnails(videoFile, count = 10) {
                 resolve([]);
             }
         }, 5000);
+    });
+}
+
+/**
+ * Generate thumbnails from an existing video element (for screen recordings)
+ * This avoids blob URL issues by using the already loaded video
+ * @param {HTMLVideoElement} videoElement - The video element
+ * @param {number} duration - Known duration of the video
+ * @param {number} count - Number of thumbnails to generate
+ * @returns {Promise<string[]>} Array of data URLs for thumbnails
+ */
+export async function generateThumbnailsFromVideo(videoElement, duration, count = 10) {
+    return new Promise((resolve) => {
+        if (!videoElement || !duration || duration <= 0) {
+            resolve([]);
+            return;
+        }
+
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const thumbnails = [];
+
+        // Set canvas size based on video dimensions
+        const aspectRatio = videoElement.videoWidth / videoElement.videoHeight;
+        canvas.height = 60;
+        canvas.width = Math.round(60 * aspectRatio) || 100;
+
+        const interval = duration / count;
+        let currentIndex = 0;
+        const originalTime = videoElement.currentTime;
+
+        const captureNext = () => {
+            if (currentIndex >= count) {
+                // Done, restore original time
+                videoElement.currentTime = originalTime;
+                resolve(thumbnails);
+                return;
+            }
+
+            const time = Math.min(currentIndex * interval, duration - 0.1);
+
+            const onSeeked = () => {
+                videoElement.removeEventListener('seeked', onSeeked);
+
+                try {
+                    ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                    thumbnails.push(dataUrl);
+                } catch (err) {
+                    console.warn('Error capturing frame at', time);
+                    thumbnails.push(null);
+                }
+
+                currentIndex++;
+                captureNext();
+            };
+
+            videoElement.addEventListener('seeked', onSeeked);
+            videoElement.currentTime = Math.max(0, time);
+        };
+
+        // Start capturing
+        captureNext();
+
+        // Timeout fallback
+        setTimeout(() => {
+            if (thumbnails.length < count) {
+                console.warn('Thumbnail generation incomplete, got', thumbnails.length);
+                videoElement.currentTime = originalTime;
+                resolve(thumbnails);
+            }
+        }, 10000);
     });
 }
 
