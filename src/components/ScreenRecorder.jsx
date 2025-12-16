@@ -1,17 +1,37 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 
-// Keep refs outside component to avoid cleanup issues
+// Global state for screen recording
 let globalStreamRef = null;
 let globalMediaRecorderRef = null;
 let globalChunksRef = [];
 let globalStartTime = null;
 let globalIsActive = false;
+let globalMimeType = 'video/webm';
+let globalOnRecordingEnd = null;
+let globalOnRecordingComplete = null;
+
+// Global stop function - exposed to window
+function stopRecordingGlobal() {
+    console.log('stopRecordingGlobal called, mediaRecorder state:', globalMediaRecorderRef?.state);
+    if (globalMediaRecorderRef && globalMediaRecorderRef.state === 'recording') {
+        globalMediaRecorderRef.stop();
+    }
+}
+
+// Always expose to window
+window.stopScreenRecording = stopRecordingGlobal;
 
 export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingStart, onRecordingEnd }) {
     const [error, setError] = useState(null);
 
+    // Store callbacks in globals so they can be accessed from onstop
+    useEffect(() => {
+        globalOnRecordingEnd = onRecordingEnd;
+        globalOnRecordingComplete = onRecordingComplete;
+    }, [onRecordingEnd, onRecordingComplete]);
+
     // Stop stream helper
-    const stopStream = useCallback(() => {
+    const stopStream = () => {
         if (globalStreamRef) {
             console.log('Stopping stream tracks...');
             globalStreamRef.getTracks().forEach(track => {
@@ -20,15 +40,7 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
             });
             globalStreamRef = null;
         }
-    }, []);
-
-    // Stop recording helper
-    const stopRecording = useCallback(() => {
-        console.log('Stop recording called, state:', globalMediaRecorderRef?.state, 'active:', globalIsActive);
-        if (globalMediaRecorderRef && globalMediaRecorderRef.state === 'recording') {
-            globalMediaRecorderRef.stop();
-        }
-    }, []);
+    };
 
     // Start recording
     const startRecording = async () => {
@@ -39,7 +51,6 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
         try {
             console.log('Requesting screen capture...');
 
-            // Request screen capture with audio
             const stream = await navigator.mediaDevices.getDisplayMedia({
                 video: {
                     cursor: 'always'
@@ -54,17 +65,17 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
 
             globalStreamRef = stream;
 
-            // Create MediaRecorder
-            let mimeType = 'video/webm';
+            // Determine mimeType
+            globalMimeType = 'video/webm';
             if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) {
-                mimeType = 'video/webm;codecs=vp8,opus';
+                globalMimeType = 'video/webm;codecs=vp8,opus';
             } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
-                mimeType = 'video/webm;codecs=vp9';
+                globalMimeType = 'video/webm;codecs=vp9';
             }
-            console.log('Using mimeType:', mimeType);
+            console.log('Using mimeType:', globalMimeType);
 
             const mediaRecorder = new MediaRecorder(stream, {
-                mimeType,
+                mimeType: globalMimeType,
                 videoBitsPerSecond: 2500000
             });
 
@@ -84,13 +95,13 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
             };
 
             mediaRecorder.onstop = () => {
-                console.log('MediaRecorder stopped, chunks:', globalChunksRef.length, 'active:', globalIsActive);
+                console.log('MediaRecorder stopped, chunks:', globalChunksRef.length);
                 globalIsActive = false;
 
                 if (globalChunksRef.length === 0) {
                     console.warn('Recording stopped but no data was captured');
                     stopStream();
-                    onRecordingEnd();
+                    if (globalOnRecordingEnd) globalOnRecordingEnd();
                     return;
                 }
 
@@ -99,13 +110,13 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
                 const durationSeconds = Math.max(1, durationMs / 1000);
                 console.log('Recording duration:', durationSeconds, 'seconds');
 
-                const blob = new Blob(globalChunksRef, { type: mimeType });
+                const blob = new Blob(globalChunksRef, { type: globalMimeType });
                 console.log('Blob size:', blob.size, 'bytes');
 
                 if (blob.size < 1000) {
                     console.warn('Recording too short or empty');
                     stopStream();
-                    onRecordingEnd();
+                    if (globalOnRecordingEnd) globalOnRecordingEnd();
                     return;
                 }
 
@@ -117,8 +128,8 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
                 console.log('File created:', file.name, file.size, 'bytes');
 
                 stopStream();
-                onRecordingEnd();
-                onRecordingComplete(file, durationSeconds);
+                if (globalOnRecordingEnd) globalOnRecordingEnd();
+                if (globalOnRecordingComplete) globalOnRecordingComplete(file, durationSeconds);
             };
 
             mediaRecorder.onerror = (e) => {
@@ -135,15 +146,13 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
                 } else if (!globalIsActive) {
                     console.log('Track ended before recording started');
                     stopStream();
-                    onRecordingEnd();
+                    if (globalOnRecordingEnd) globalOnRecordingEnd();
                 }
             };
 
-            // Start recording FIRST, then notify parent
             console.log('Starting MediaRecorder...');
             mediaRecorder.start(1000);
 
-            // Small delay before notifying parent to ensure recorder is started
             setTimeout(() => {
                 console.log('Notifying parent that recording started');
                 onRecordingStart();
@@ -159,17 +168,6 @@ export function ScreenRecorder({ onRecordingComplete, isRecording, onRecordingSt
         }
     };
 
-    // Expose stop function when recording
-    useEffect(() => {
-        if (isRecording) {
-            window.stopScreenRecording = stopRecording;
-        }
-        return () => {
-            delete window.stopScreenRecording;
-        };
-    }, [isRecording, stopRecording]);
-
-    // Don't render anything when recording (indicator is in header)
     if (isRecording) {
         return null;
     }
