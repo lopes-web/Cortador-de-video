@@ -18,39 +18,21 @@ export function VideoPreview({
     const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
     const [initialCrop, setInitialCrop] = useState(null);
     const [isAltPressed, setIsAltPressed] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
+    const [isVideoReady, setIsVideoReady] = useState(false);
 
-    // Create video URL - use data URL for screen recordings to avoid range request errors
+    // Create video URL - always use blob URL
     useEffect(() => {
-        if (!videoFile) return;
-
-        const isScreenRecording = videoFile.type === 'video/webm' && videoFile.name.startsWith('gravacao_');
-
-        if (isScreenRecording) {
-            // For screen recordings, convert to data URL to avoid range request issues
-            setIsLoading(true);
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                setVideoUrl(e.target.result);
-                setIsLoading(false);
-            };
-            reader.onerror = () => {
-                // Fallback to blob URL if data URL fails
-                const url = URL.createObjectURL(videoFile);
-                setVideoUrl(url);
-                setIsLoading(false);
-            };
-            reader.readAsDataURL(videoFile);
-
-            return () => {
-                reader.abort();
-            };
-        } else {
-            // For regular files, use blob URL
-            const url = URL.createObjectURL(videoFile);
-            setVideoUrl(url);
-            return () => URL.revokeObjectURL(url);
+        if (!videoFile) {
+            setVideoUrl(null);
+            setIsVideoReady(false);
+            return;
         }
+
+        const url = URL.createObjectURL(videoFile);
+        setVideoUrl(url);
+        setIsVideoReady(false);
+
+        return () => URL.revokeObjectURL(url);
     }, [videoFile]);
 
     // Track Alt key
@@ -375,10 +357,14 @@ export function VideoPreview({
                     ref={videoRef}
                     className="video-preview__video"
                     src={videoUrl}
+                    preload="auto"
                     onLoadedMetadata={handleLoadedMetadata}
                     onTimeUpdate={handleTimeUpdate}
                     onClick={handleVideoClick}
+                    onCanPlay={() => setIsVideoReady(true)}
+                    onError={(e) => console.warn('Video error:', e.target.error)}
                     playsInline
+                    muted={false}
                 />
 
                 {videoDimensions.width > 0 && (
