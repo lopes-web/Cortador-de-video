@@ -90,23 +90,39 @@ function App() {
     }
   }, [speed]);
 
-  // Handle time update
+  // Handle time update - enforce trim limits
   const handleTimeUpdate = useCallback((time) => {
-    setCurrentTime(time);
-
-    if (time >= trimEnd && isPlaying) {
-      videoRef.current.pause();
+    // Clamp time within trim bounds
+    if (time >= trimEnd) {
+      if (videoRef.current) {
+        videoRef.current.pause();
+        videoRef.current.currentTime = trimEnd;
+      }
+      setCurrentTime(trimEnd);
       setIsPlaying(false);
+      return;
     }
-  }, [trimEnd, isPlaying]);
 
-  // Handle seek
+    if (time < trimStart) {
+      if (videoRef.current) {
+        videoRef.current.currentTime = trimStart;
+      }
+      setCurrentTime(trimStart);
+      return;
+    }
+
+    setCurrentTime(time);
+  }, [trimStart, trimEnd]);
+
+  // Handle seek - limit to trim range
   const handleSeek = useCallback((time) => {
     if (videoRef.current) {
-      videoRef.current.currentTime = time;
-      setCurrentTime(time);
+      // Clamp time to trim range
+      const clampedTime = Math.max(trimStart, Math.min(trimEnd, time));
+      videoRef.current.currentTime = clampedTime;
+      setCurrentTime(clampedTime);
     }
-  }, []);
+  }, [trimStart, trimEnd]);
 
   // Handle trim change
   const handleTrimChange = useCallback((start, end) => {
@@ -114,10 +130,13 @@ function App() {
     setTrimEnd(end);
 
     if (videoRef.current) {
-      if (videoRef.current.currentTime < start) {
+      const current = videoRef.current.currentTime;
+      if (current < start) {
         videoRef.current.currentTime = start;
-      } else if (videoRef.current.currentTime > end) {
+        setCurrentTime(start);
+      } else if (current > end) {
         videoRef.current.currentTime = end;
+        setCurrentTime(end);
       }
     }
   }, []);
