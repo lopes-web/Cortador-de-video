@@ -51,25 +51,80 @@ export function VideoPreview({
         };
     }, []);
 
-    const handleLoadedMetadata = () => {
+    // Handle metadata and video dimensions
+    const updateVideoDimensions = useCallback(() => {
         if (videoRef.current) {
             const video = videoRef.current;
             const rect = video.getBoundingClientRect();
 
-            setVideoDimensions({
-                width: rect.width,
-                height: rect.height,
-                videoWidth: video.videoWidth,
-                videoHeight: video.videoHeight
-            });
+            if (video.videoWidth > 0 && video.videoHeight > 0) {
+                setVideoDimensions({
+                    width: rect.width,
+                    height: rect.height,
+                    videoWidth: video.videoWidth,
+                    videoHeight: video.videoHeight
+                });
 
-            onLoadedMetadata({
-                duration: video.duration,
-                width: video.videoWidth,
-                height: video.videoHeight
-            });
+                // Only call onLoadedMetadata if we have valid dimensions
+                const duration = isFinite(video.duration) && video.duration > 0
+                    ? video.duration
+                    : 0;
+
+                onLoadedMetadata({
+                    duration,
+                    width: video.videoWidth,
+                    height: video.videoHeight
+                });
+            }
         }
+    }, [onLoadedMetadata]);
+
+    const handleLoadedMetadata = () => {
+        updateVideoDimensions();
     };
+
+    // For WebM files, we need to listen for multiple events
+    useEffect(() => {
+        const video = videoRef.current;
+        if (!video || !videoUrl) return;
+
+        const handleCanPlay = () => {
+            updateVideoDimensions();
+        };
+
+        const handleDurationChange = () => {
+            if (isFinite(video.duration) && video.duration > 0) {
+                updateVideoDimensions();
+            }
+        };
+
+        // For WebM without duration, seek to end to get real duration
+        const handleLoadedData = () => {
+            if (!isFinite(video.duration) || video.duration <= 0) {
+                // Seek to end to trigger duration calculation
+                video.currentTime = 1e10;
+            }
+        };
+
+        const handleSeeked = () => {
+            if (isFinite(video.duration) && video.duration > 0) {
+                video.currentTime = 0;
+                updateVideoDimensions();
+            }
+        };
+
+        video.addEventListener('canplay', handleCanPlay);
+        video.addEventListener('durationchange', handleDurationChange);
+        video.addEventListener('loadeddata', handleLoadedData);
+        video.addEventListener('seeked', handleSeeked);
+
+        return () => {
+            video.removeEventListener('canplay', handleCanPlay);
+            video.removeEventListener('durationchange', handleDurationChange);
+            video.removeEventListener('loadeddata', handleLoadedData);
+            video.removeEventListener('seeked', handleSeeked);
+        };
+    }, [videoUrl, updateVideoDimensions]);
 
     const handleTimeUpdate = () => {
         if (videoRef.current) {
