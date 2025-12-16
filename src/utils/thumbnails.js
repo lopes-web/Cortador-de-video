@@ -35,10 +35,10 @@ export async function generateThumbnails(videoFile, count = 10) {
 
             const interval = duration / count;
 
-            // Set canvas size based on video dimensions
+            // Set canvas size based on video dimensions - higher resolution
             const aspectRatio = video.videoWidth / video.videoHeight;
-            canvas.height = 60;
-            canvas.width = Math.round(60 * aspectRatio) || 100;
+            canvas.height = 120; // Increased for better quality
+            canvas.width = Math.round(120 * aspectRatio) || 200;
 
             for (let i = 0; i < count; i++) {
                 const time = Math.min(i * interval, duration - 0.1);
@@ -111,10 +111,10 @@ export async function generateThumbnailsFromVideo(videoElement, duration, count 
         const ctx = canvas.getContext('2d');
         const thumbnails = [];
 
-        // Set canvas size based on video dimensions
+        // Set canvas size based on video dimensions - higher resolution for better quality
         const aspectRatio = videoElement.videoWidth / videoElement.videoHeight;
-        canvas.height = 60;
-        canvas.width = Math.round(60 * aspectRatio) || 100;
+        canvas.height = 120; // Increased from 60 for better quality
+        canvas.width = Math.round(120 * aspectRatio) || 200;
 
         const interval = duration / count;
         let currentIndex = 0;
@@ -135,7 +135,7 @@ export async function generateThumbnailsFromVideo(videoElement, duration, count 
 
                 try {
                     ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-                    const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
                     thumbnails.push(dataUrl);
                 } catch (err) {
                     console.warn('Error capturing frame at', time);
@@ -180,7 +180,7 @@ function captureFrame(video, canvas, ctx, time) {
 
             try {
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
                 resolve(dataUrl);
             } catch (err) {
                 reject(err);
