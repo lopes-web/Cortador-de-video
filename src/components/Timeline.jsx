@@ -11,7 +11,9 @@ export function Timeline({
     onSeek
 }) {
     const trackRef = useRef(null);
-    const [isDragging, setIsDragging] = useState(null); // 'start', 'end', 'playhead'
+    const [isDragging, setIsDragging] = useState(null);
+    const [hoverTime, setHoverTime] = useState(null);
+    const [hoverX, setHoverX] = useState(0);
 
     const getPositionFromTime = (time) => {
         if (!duration) return 0;
@@ -30,33 +32,54 @@ export function Timeline({
     const handleTrackClick = (e) => {
         if (isDragging) return;
         const time = getTimeFromPosition(e.clientX);
-        onSeek(time);
+        // Clicking sets playhead position
+        onSeek(Math.max(0, Math.min(duration, time)));
     };
 
     const handleMouseDown = (e, type) => {
         e.stopPropagation();
+        e.preventDefault();
         setIsDragging(type);
     };
 
     const handleMouseMove = useCallback((e) => {
+        // Update hover time for preview
+        if (trackRef.current) {
+            const rect = trackRef.current.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            if (x >= 0 && x <= rect.width) {
+                setHoverTime(getTimeFromPosition(e.clientX));
+                setHoverX(x);
+            } else {
+                setHoverTime(null);
+            }
+        }
+
         if (!isDragging) return;
 
         const time = getTimeFromPosition(e.clientX);
 
         if (isDragging === 'start') {
-            const newStart = Math.max(0, Math.min(trimEnd - 0.1, time));
+            // Minimum 0.5 second selection
+            const newStart = Math.max(0, Math.min(trimEnd - 0.5, time));
             onTrimChange(newStart, trimEnd);
         } else if (isDragging === 'end') {
-            const newEnd = Math.max(trimStart + 0.1, Math.min(duration, time));
+            const newEnd = Math.max(trimStart + 0.5, Math.min(duration, time));
             onTrimChange(trimStart, newEnd);
         } else if (isDragging === 'playhead') {
-            onSeek(Math.max(trimStart, Math.min(trimEnd, time)));
+            onSeek(Math.max(0, Math.min(duration, time)));
         }
     }, [isDragging, trimStart, trimEnd, duration, getTimeFromPosition, onTrimChange, onSeek]);
 
     const handleMouseUp = useCallback(() => {
         setIsDragging(null);
     }, []);
+
+    const handleMouseLeave = () => {
+        if (!isDragging) {
+            setHoverTime(null);
+        }
+    };
 
     useEffect(() => {
         if (isDragging) {
@@ -72,12 +95,13 @@ export function Timeline({
     const startPercent = getPositionFromTime(trimStart);
     const endPercent = getPositionFromTime(trimEnd);
     const playheadPercent = getPositionFromTime(currentTime);
+    const trimDuration = trimEnd - trimStart;
 
     return (
         <div className="timeline">
             <div className="timeline__time-display">
                 <span>{formatTime(trimStart)}</span>
-                <span>{formatTime(currentTime)}</span>
+                <span className="timeline__current-time">{formatTime(currentTime)}</span>
                 <span>{formatTime(trimEnd)}</span>
             </div>
 
@@ -85,6 +109,8 @@ export function Timeline({
                 className="timeline__track-container"
                 ref={trackRef}
                 onClick={handleTrackClick}
+                onMouseMove={handleMouseMove}
+                onMouseLeave={handleMouseLeave}
             >
                 {/* Thumbnails */}
                 <div className="timeline__thumbnails">
@@ -98,12 +124,22 @@ export function Timeline({
                                 draggable={false}
                             />
                         ) : (
-                            <div key={index} className="timeline__thumbnail" style={{ background: '#1e3a5f' }} />
+                            <div key={index} className="timeline__thumbnail" style={{ background: '#232428' }} />
                         )
                     ))}
                 </div>
 
-                {/* Selected area */}
+                {/* Dim areas outside selection */}
+                <div
+                    className="timeline__dim-area"
+                    style={{ left: 0, width: `${startPercent}%` }}
+                />
+                <div
+                    className="timeline__dim-area"
+                    style={{ left: `${endPercent}%`, right: 0 }}
+                />
+
+                {/* Selected area with handles */}
                 <div
                     className="timeline__selected-area"
                     style={{
@@ -116,7 +152,15 @@ export function Timeline({
                         className="timeline__handle timeline__handle--start"
                         onMouseDown={(e) => handleMouseDown(e, 'start')}
                     >
-                        <div className="timeline__handle-line" />
+                        <div className="timeline__handle-grip">
+                            <span></span>
+                            <span></span>
+                        </div>
+                    </div>
+
+                    {/* Duration indicator */}
+                    <div className="timeline__duration-indicator">
+                        {formatTime(trimDuration)}
                     </div>
 
                     {/* End handle */}
@@ -124,9 +168,22 @@ export function Timeline({
                         className="timeline__handle timeline__handle--end"
                         onMouseDown={(e) => handleMouseDown(e, 'end')}
                     >
-                        <div className="timeline__handle-line" />
+                        <div className="timeline__handle-grip">
+                            <span></span>
+                            <span></span>
+                        </div>
                     </div>
                 </div>
+
+                {/* Hover time indicator */}
+                {hoverTime !== null && !isDragging && (
+                    <div
+                        className="timeline__hover-indicator"
+                        style={{ left: hoverX }}
+                    >
+                        <span className="timeline__hover-time">{formatTime(hoverTime)}</span>
+                    </div>
+                )}
 
                 {/* Playhead */}
                 <div

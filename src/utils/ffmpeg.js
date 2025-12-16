@@ -38,7 +38,7 @@ const VIDEO_QUALITY = {
 const GIF_QUALITY = {
   low: { fps: 10, scale: 320 },
   medium: { fps: 15, scale: 480 },
-  high: { fps: 20, scale: 640 },
+  high: { fps: 24, scale: 640 },
 };
 
 export async function processVideo(file, options, onProgress) {
@@ -50,8 +50,8 @@ export async function processVideo(file, options, onProgress) {
     speed = 1,
     trimStart = 0,
     trimEnd = null,
-    format = 'mp4', // 'mp4' or 'gif'
-    quality = 'medium', // 'low', 'medium', 'high'
+    format = 'mp4',
+    quality = 'medium',
   } = options;
 
   const ff = await initFFmpeg(onProgress);
@@ -66,22 +66,26 @@ export async function processVideo(file, options, onProgress) {
   // Build FFmpeg command
   const videoFilters = [];
   const audioFilters = [];
-  const args = ['-i', inputName];
+  const args = [];
 
-  // Trim
+  // For accurate seeking, put -ss before -i (input seeking)
   if (trimStart > 0) {
-    args.push('-ss', String(trimStart));
-  }
-  if (trimEnd !== null) {
-    args.push('-t', String(trimEnd - trimStart));
+    args.push('-ss', trimStart.toFixed(3));
   }
 
-  // Speed
+  args.push('-i', inputName);
+
+  // Duration after input for accurate output duration
+  if (trimEnd !== null && trimEnd > trimStart) {
+    const duration = trimEnd - trimStart;
+    args.push('-t', duration.toFixed(3));
+  }
+
+  // Speed adjustment
   if (speed !== 1) {
     videoFilters.push(`setpts=${(1 / speed).toFixed(4)}*PTS`);
 
     if (!isGif) {
-      // Audio speed adjustment (only for video, not GIF)
       let audioFilter = '';
       if (speed >= 0.5 && speed <= 2.0) {
         audioFilter = `atempo=${speed}`;
@@ -121,7 +125,7 @@ export async function processVideo(file, options, onProgress) {
     // GIF-specific processing
     const gifSettings = GIF_QUALITY[quality] || GIF_QUALITY.medium;
 
-    // Add fps and scale for GIF
+    // Add fps for GIF
     videoFilters.push(`fps=${gifSettings.fps}`);
 
     // Scale to max width while maintaining aspect ratio
@@ -131,17 +135,15 @@ export async function processVideo(file, options, onProgress) {
       videoFilters.push(`scale='min(${gifSettings.scale},iw)':-1:flags=lanczos`);
     }
 
-    // Split for palette generation (better quality GIF)
-    videoFilters.push('split[s0][s1]');
-
-    // Build filter complex for GIF with palette
-    const baseFilters = videoFilters.slice(0, -1).join(','); // All filters except split
+    // Build simple filter for GIF with palette (two-pass style in one command)
+    const baseFilters = videoFilters.join(',');
     args.push('-filter_complex',
-      `${baseFilters},split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5`
+      `${baseFilters},split[s0][s1];[s0]palettegen=max_colors=256:stats_mode=full[p];[s1][p]paletteuse=dither=sierra2_4a`
     );
 
-    // GIF output
-    args.push('-loop', '0', outputName);
+    // GIF output - loop forever (0 = infinite loop)
+    args.push('-loop', '0');
+    args.push(outputName);
 
   } else {
     // MP4 processing
@@ -168,6 +170,7 @@ export async function processVideo(file, options, onProgress) {
       '-crf', String(videoSettings.crf),
       '-c:a', 'aac',
       '-b:a', '128k',
+      '-movflags', '+faststart',
       outputName
     );
   }

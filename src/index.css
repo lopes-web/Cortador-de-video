@@ -380,12 +380,13 @@ select {
 }
 
 .timeline__current-time {
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
+  font-weight: 600;
 }
 
 .timeline__track-container {
   position: relative;
-  height: 56px;
+  height: 64px;
   background: var(--color-timeline-track);
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -405,52 +406,106 @@ select {
   flex: 1;
   height: 100%;
   object-fit: cover;
-  opacity: 0.7;
 }
 
-/* Selected area - just borders, no overlay */
+/* Dim areas outside selection */
+.timeline__dim-area {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+/* Selected area with top/bottom border */
 .timeline__selected-area {
   position: absolute;
   top: 0;
   height: 100%;
   background: transparent;
-  border-left: 2px solid var(--color-text-primary);
-  border-right: 2px solid var(--color-text-primary);
+  border-top: 3px solid var(--color-text-primary);
+  border-bottom: 3px solid var(--color-text-primary);
+  box-sizing: border-box;
 }
 
 .timeline__handle {
   position: absolute;
   top: 0;
-  width: 10px;
+  width: 16px;
   height: 100%;
   background: var(--color-text-primary);
   cursor: ew-resize;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: opacity var(--transition-fast);
-  opacity: 0.9;
+  transition: background var(--transition-fast);
+  z-index: 5;
 }
 
 .timeline__handle:hover {
-  opacity: 1;
+  background: var(--color-accent-secondary);
 }
 
 .timeline__handle--start {
-  left: -5px;
+  left: -8px;
   border-radius: var(--radius-sm) 0 0 var(--radius-sm);
 }
 
 .timeline__handle--end {
-  right: -5px;
+  right: -8px;
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 
-.timeline__handle-line {
+.timeline__handle-grip {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.timeline__handle-grip span {
+  display: block;
   width: 2px;
-  height: 20px;
-  background: rgba(0, 0, 0, 0.3);
-  border-radius: var(--radius-full);
+  height: 12px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 1px;
+}
+
+/* Duration indicator */
+.timeline__duration-indicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 2px 8px;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  pointer-events: none;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Hover time indicator */
+.timeline__hover-indicator {
+  position: absolute;
+  top: -24px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 20;
+}
+
+.timeline__hover-time {
+  display: block;
+  padding: 2px 6px;
+  background: var(--color-bg-card);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .timeline__playhead {
@@ -458,7 +513,7 @@ select {
   top: 0;
   width: 2px;
   height: 100%;
-  background: var(--color-text-primary);
+  background: #ff4444;
   pointer-events: none;
   z-index: 10;
 }
@@ -466,13 +521,13 @@ select {
 .timeline__playhead::before {
   content: '';
   position: absolute;
-  top: -4px;
-  left: -4px;
+  top: -2px;
+  left: -5px;
   width: 0;
   height: 0;
-  border-left: 5px solid transparent;
-  border-right: 5px solid transparent;
-  border-top: 5px solid var(--color-text-primary);
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 6px solid #ff4444;
 }
 
 /* Controls Bar */
